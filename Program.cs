@@ -14,7 +14,7 @@ namespace Revisory_Control.Grabber
     {
         [DllImport("kernel32.dll")]
         static extern IntPtr GetConsoleWindow();
- 
+
         [DllImport("user32.dll")]
         static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         const int SW_HIDE = 0;
@@ -28,7 +28,9 @@ namespace Revisory_Control.Grabber
 
 
         private const string API_URL = "https://localhost:5001/api/";
+        private const int MINUTE = 60_000;
         private static LoginUser userToLogin { get; set; }
+        private static User user { get; set; }
         private static ResponseToken token { get; set; }
 
         static async Task Main(string[] args)
@@ -39,13 +41,13 @@ namespace Revisory_Control.Grabber
 
             using var client = new HttpClient();
             client.DefaultRequestHeaders
-                .Accept
-                .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                  .Accept
+                  .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            do 
-            {                
+            do
+            {
                 LoginUser userToLogin = GetUserData();
-                
+
                 HttpResponseMessage loginResult = await LoginUser(userToLogin, client);
 
                 if (loginResult.IsSuccessStatusCode)
@@ -64,29 +66,41 @@ namespace Revisory_Control.Grabber
 
             HttpResponseMessage userResult = await client.GetAsync(API_URL + "users/" + userId);
 
-            User user = userResult.Content.ReadAsAsync<User>().Result;
+            user = userResult.Content.ReadAsAsync<User>().Result;
 
-            Console.WriteLine($"\nКористувач: {user.Firstname} {user.Lastname}. Вікно згорнеться через 3 секунди...");
-            Console.WriteLine(GetActiveWindowTitle());
+            Console.WriteLine($"\nКористувач: {user.Firstname} {user.Lastname}. \nВікно згорнеться через 3 секунди...");
+
             GC.Collect();
 
-            //Thread.Sleep(3000);
+            Thread.Sleep(3000);
 
-            //ShowWindow(GetConsoleWindow(), SW_HIDE);
-        
-            Timer timer = new Timer(isUserWorking, null, 0, 1000);
-            
+            ShowWindow(GetConsoleWindow(), SW_HIDE);
+
+            Timer timer = new Timer(isUserWorking, null, 0, MINUTE);
+
             Console.ReadLine();
         }
 
-        private static void isUserWorking(Object state)
+        private async static void isUserWorking(Object state)
         {
-            if (GetActiveWindowTitle().Contains("Visual") ||
-                GetActiveWindowTitle().Contains("Studio"))
+            using var client = new HttpClient();
+
+            try
             {
-                Console.WriteLine(true);
+                HttpResponseMessage addMinuteResult = await client.PutAsync(API_URL + $"users/{user.UserId}/working/{isAllowedApp()}", null);
+                addMinuteResult.EnsureSuccessStatusCode();
             }
-            else Console.WriteLine(false);
+            catch (Exception)
+            {
+                HttpResponseMessage addMinuteResult = await client.PutAsync(API_URL + $"users/{user.UserId}/working/{false}", null);
+            }
+        }
+
+        private static bool isAllowedApp()
+        {
+            return (GetActiveWindowTitle().Contains("Visual") ||
+                    GetActiveWindowTitle().Contains("Studio") ||
+                    GetActiveWindowTitle().Contains("Git")) && GetActiveWindowTitle() != null;
         }
 
         private static string GetActiveWindowTitle()
